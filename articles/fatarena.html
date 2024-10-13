@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FatArena: Simplifying Memory Management - Floréal's Blog</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/8.11.0/mermaid.min.js"></script>
+</head>
+
+<body>
+    <header>
+        <h1>FatArena: Simplifying Memory Management in C</h1>
+    </header>
+    <nav>
+        <ul>
+            <li><a href="../index.html">Articles</a></li>
+            <li><a href="../about/about.html">About Me</a></li>
+        </ul>
+    </nav>
+    <div class="container">
+        <article>
+            <div class="author-info">
+                <p>By Floréal Risso</p>
+                <p>Github: <a href="https://github.com/florealrisso">FlorealRISSO</a></p>
+                <p>Email: <a href="mailto:floreal.risso@proton.me">floreal.risso@proton.me</a></p>
+                <p>Code : <a href="https://github.com/FlorealRISSO/fatarena">FatArena</a></p>
+                <p>Published: April 14, 2024</p>
+            </div>
+
+            <h2>Introduction</h2>
+            <p>C's manual memory management, while powerful, can be a source of bugs and complexity. The traditional
+                "malloc" and "free" paradigm demands significant cognitive overhead from developers and can lead to
+                performance bottlenecks. But what if we could simplify this process? Enter FatArena, a novel approach to
+                memory management that challenges conventional wisdom and offers a streamlined alternative.</p>
+
+            <h2>The Problem with Traditional Memory Management</h2>
+            <p>The standard malloc allocator is a complex beast. It juggles multiple responsibilities:</p>
+            <ul>
+                <li>Allocating memory</li>
+                <li>Reallocating memory</li>
+                <li>Freeing memory</li>
+                <li>Maintaining a list of free blocks</li>
+                <li>Allocating new pages when necessary</li>
+            </ul>
+            <p>This complexity comes at a cost: increased CPU usage, potential for bugs, and cognitive load on
+                developers. But what if we could simplify these requirements?</p>
+
+            <h2>Introducing FatArena</h2>
+            <p>FatArena is a different approach to memory management with two primary goals:</p>
+            <ol>
+                <li>Allocate new chunks of memory efficiently</li>
+                <li>Free all allocated chunks at once</li>
+            </ol>
+            <p>By narrowing our focus, we can create a simpler, more efficient system. But this approach comes with a
+                caveat: you can't free individual chunks. This limitation, however, can lead to better code structure by
+                encouraging developers to group data with similar lifetimes.</p>
+
+            <h2>How FatArena Works</h2>
+            <p>FatArena leverages a clever trick in modern operating systems: when you request a new page of memory, the
+                OS doesn't immediately allocate it in RAM. Instead, it waits until the memory is actually accessed (read
+                or written to). This allows us to create large, virtual buffers for specific lifetimes, flushing them
+                entirely when no longer needed.</p>
+
+
+            <p>Here's the basic structure of our FatArena
+                <a href='https://github.com/FlorealRISSO/fatarena'>(code here)</a>:
+            </p>
+            <pre><code>
+typedef struct FatArena {
+    uint8_t *addr;  // The page address
+    size_t remain;  // The remaining storage
+    size_t size;    // The total storage
+} FatArena;
+            </code></pre>
+
+            <h2>FatArena Memory Layout</h2>
+            <p>To better understand how FatArena uses memory, let's look at its layout:</p>
+            <div class="mermaid">
+                graph LR
+                subgraph "FatArena Memory Layout"
+                A[Virtual Memory] --> B[Page 1]
+                A --> C[Page 2]
+                A --> D[Page 3]
+                A --> E[...]
+                B --> F[Used Memory]
+                B --> G[Remaining Memory]
+                C --> H[Unused]
+                D --> I[Unused]
+                E --> J[Unused]
+                end
+            </div>
+            <p>FatArena allocates virtual memory pages, but only uses what it needs. The OS only commits real memory
+                when it's accessed.</p>
+
+            <h2>Implementing FatArena</h2>
+            <p>Let's look at the core function for creating a new FatArena:</p>
+            <pre><code>
+Bool ftnew(FatArena *a, size_t sz)
+{
+    pgsz = sysconf(_SC_PAGESIZE);
+    size_t fatsz = pgsz;
+    while (fatsz < sz) {
+        fatsz += pgsz;
+    }
+
+    uint8_t *pg = mmap(NULL, fatsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (pg == MAP_FAILED) {
+        return 0;
+    }
+
+    a->addr = pg;
+    a->remain = fatsz;
+    a->size = fatsz;
+    return 1;
+}
+            </code></pre>
+            <p>This function calculates the number of pages needed, rounds up to the nearest integer, and uses mmap to
+                allocate the virtual memory.</p>
+
+            <h2>Advantages of FatArena</h2>
+            <ul>
+                <li>Simplified memory management: no need to track individual allocations</li>
+                <li>Improved performance: fewer system calls and no complex free-list management</li>
+                <li>Reduced memory usage: pointers can be stored as integers (indexes)</li>
+                <li>Encourages better code structure by grouping data with similar lifetimes</li>
+            </ul>
+
+            <h2>Real-World Application: Streamlining Compiler Lexical Analysis</h2>
+            <p>Let's dive into a practical example where FatArena shines: the lexical analysis phase of a compiler. This
+                stage transforms source code into a sequence of tokens, and it's a perfect showcase for FatArena's
+                efficiency. We'll use the <a href="https://github.com/ghuter/chi" target="_blank">Chi
+                    Compiler</a> as our reference implementation.
+            </p>
+
+            <h3>The Traditional Approach vs. FatArena</h3>
+            <p>In a traditional lexer implementation, you might create a complex list of unions or structures to
+                represent different token types. Each token could have various fields to store additional information,
+                like line numbers, literal values, or identifiers. This approach, while flexible, can lead to increased
+                memory usage and more complex token handling code.</p>
+
+            <p>With FatArena, we can dramatically simplify this process. Instead of a complex data structure, our lexer
+                produces a simple list of integers. These integers represent either token types (as enum values) or
+                indexes into our FatArena. This approach offers several advantages:</p>
+
+            <ul>
+                <li>Simplified Token Stream: The output is just a list of integers, making it easy to process and store.
+                </li>
+                <li>Memory Efficiency: We only store the essential information in the token stream itself.</li>
+                <li>Fast Processing: Working with a list of integers is typically faster than processing complex
+                    structures.</li>
+                <li>Flexible Storage: Additional data (like literal values) are stored efficiently in the FatArena.</li>
+            </ul>
+
+            <h3>Efficient Token Processing</h3>
+            <p>Processing this token stream becomes straightforward and efficient. Here's a simplified example of how we
+                might handle tokens in the next phase of compilation:</p>
+
+            <pre><code>
+void process_tokens(int *tokens, int token_count, FatArena *arena) {
+    for (int i = 0; i < token_count; i++) {
+        switch (tokens[i]) {
+            case TOK_IF:
+                // Handle 'if' statement
+                break;
+            case TOK_IDENTIFIER:
+                // The next token is the index in the FatArena
+                char *identifier = ftptr(arena, tokens[++i]);
+                // Process identifier
+                break;
+            case TOK_LITERAL:
+                // The next token is the index in the FatArena
+                char *literal = ftptr(arena, tokens[++i]);
+                // Process literal
+                break;
+            // ... handle other token types ...
+        }
+    }
+}
+            </code></pre>
+
+            <p>This approach offers several benefits:</p>
+            <ul>
+                <li><strong>Simplicity:</strong> The token processing logic is straightforward and easy to understand.
+                </li>
+                <li><strong>Efficiency:</strong> We're working with a simple array of integers, which is cache-friendly
+                    and fast to process.</li>
+                <li><strong>Flexibility:</strong> Adding new token types is as simple as adding new enum values and case
+                    statements.</li>
+                <li><strong>Memory Locality:</strong> All our tokens are stored contiguously, and additional data is
+                    efficiently packed in the FatArena.</li>
+            </ul>
+
+            <h3>Setting Up FatArena for Lexical Analysis</h3>
+            <p>Here's how we might set up our FatArenas for the lexer:</p>
+
+            <pre><code>
+// Initialize our FatArenas
+FatArena tokens, literals;
+ftnew(&tokens, TOKENS_ESTIMATE * sizeof(int));
+ftnew(&literals, LITERALS_ESTIMATE);
+
+// Perform lexical analysis
+lex_source_code(&tokens, &literals);
+
+// Now 'tokens' contains our integer token stream,
+// and 'literals' contains all string data (identifiers, literal values, etc.)
+            </code></pre>
+
+            <p>This setup allows us to efficiently store and process tokens without the overhead of complex data
+                structures. The lexer can quickly append tokens and literal data, and subsequent compiler stages can
+                easily access this information.</p>
+
+            <h3>The Power of Simplicity</h3>
+            <p>By leveraging FatArena in our lexer, we've transformed a potentially complex and memory-intensive process
+                into a streamlined, efficient operation. This approach not only simplifies our code but also paves the
+                way for better performance in later stages of compilation.</p>
+
+            <p>The beauty of this system lies in its simplicity. By reducing our token representation to its essence - a
+                series of integers - we've created a flexible, fast, and memory-efficient lexical analysis stage. This
+                is just one example of how FatArena's unique approach to memory management can lead to elegant solutions
+                in real-world applications.</p>
+
+
+            <h2>Conclusion</h2>
+            <p>FatArena offers a fresh perspective on memory management in C. By simplifying our requirements and
+                leveraging OS-level optimizations, we can create more efficient and less error-prone code. While it may
+                require a shift in thinking about memory allocation, the benefits in terms of performance and code
+                clarity can be significant.</p>
+
+            <p>As with any tool, FatArena isn't a one-size-fits-all solution. It's particularly well-suited for
+                scenarios where you can group memory allocations by lifetime, such as in compilers, game engines, or any
+                application with distinct processing phases. By understanding its strengths and limitations, you can
+                make informed decisions about when and how to use FatArena in your projects.</p>
+        </article>
+    </div>
+</body>
+
+</html>

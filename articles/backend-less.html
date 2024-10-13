@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backend-less: The True Serverless</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/8.11.0/mermaid.min.js"></script>
+</head>
+
+<body>
+
+    <header>
+        <h1>Backend-less: The True Serverless</h1>
+    </header>
+
+    <nav>
+        <ul>
+            <li><a href="../index.html">Articles</a></li>
+            <li><a href="../about/about.html">About Me</a></li>
+        </ul>
+    </nav>
+    <div class="container">
+        <article>
+            <div class="author-info">
+                <p>By Floréal Risso</p>
+                <p>Github: <a href="https://github.com/florealrisso">FlorealRISSO</a></p>
+                <p>Email: <a href="mailto:floreal.risso@proton.me">floreal.risso@proton.me</a></p>
+                <p>App: <a href="https://francetermes.github.io">France Termes</a></p>
+                <p>Published: October 13, 2024</p>
+            </div>
+            <section>
+                <h2 id="challenge">The Challenge: France Termes</h2>
+                <p>
+                    As a developer who loves coding apps and websites, I've often faced a common challenge: the need for
+                    a
+                    database when building complex applications.
+                    This typically leads to implementing a backend, which brings its own set of inconveniences – server
+                    costs and cybersecurity concerns, to name a few.
+                    In this article, I'll share how I managed to eliminate the need for a traditional backend in the
+                    second
+                    version of my web app, France Termes.
+                </p>
+                <p>
+                    France Terme (without the 's') is a resource dedicated to terms recommended by the Commission
+                    d'enrichissement de la langue française and published in
+                    the Journal officiel de la République française. It's particularly useful for civil servants and
+                    language enthusiasts.
+                </p>
+                <p>
+                    The challenge arose from the fact that France Terme exports its database as an XML file. While
+                    comprehensive, this format is far from ideal for building
+                    a responsive web application. We needed a proper database to enable efficient searching, filtering,
+                    and
+                    better performance.
+                </p>
+            </section>
+
+            <section>
+                <h2 id="solution">The Solution: A Three-Step Approach</h2>
+                <p>
+                    To tackle this challenge, I developed a three-step approach that allowed me to create a fully
+                    functional, serverless web application:
+                </p>
+                <ul>
+                    <li><a href="#parser">XML Parser</a></li>
+                    <li><a href="#storage">GitHub as a Storage Solution</a></li>
+                    <li><a href="#database">Client-Side Database Management</a></li>
+                </ul>
+
+                <h3>Overall Architecture</h3>
+                <p>Below is a visual representation of the architecture, from parsing the XML file to managing the
+                    SQLite database client-side:</p>
+
+                <div class="mermaid">
+                    graph TD
+                    A[France Terme XML Data] -->|Input| B[XML Parser]
+                    B -->|Generates SQLite DB| C[SQLite Database]
+                    C -->|Push to| D[GitHub Repository]
+                    D -->|App Downloads DB| E[France Termes App]
+                    E -->|Stores DB| F[Browser localStorage]
+                    E -->|Checks for Updates| G[GitHub API]
+                    G -->|If SHA Differs| E
+                    F -->|Uses DB for Search/Filtering| E
+                </div>
+
+                <h3 id="parser">Step 1: XML Parser</h3>
+                <p>
+                    The first step was to create a parser that could transform the unwieldy XML file into a more
+                    manageable
+                    database format. I chose SQLite for this task
+                    due to its simplicity and portability. The parser reads the XML file, extracts the relevant
+                    information,
+                    and populates a SQLite database file.
+                </p>
+                <p>
+                    This parser, which I've open-sourced <a href="https://github.com/FlorealRISSO/France-Termes-Parser"
+                        target="_blank">here</a>, only needs to be run
+                    when the original XML data is updated. It's a one-time process that creates a database file ready
+                    for
+                    use in our web application.
+                </p>
+
+                <h3 id="storage">Step 2: GitHub as a Storage Solution</h3>
+                <p>
+                    With our database file created, we needed a place to store it that would be accessible to our web
+                    application. GitHub provided the perfect solution.
+                    By hosting the database file in a GitHub repository, we gain several advantages:
+                </p>
+                <ul>
+                    <li>Version Control: Track changes to our database over time.</li>
+                    <li>Easy Updates: Run the parser and push the new database file to GitHub when the original XML is
+                        updated.</li>
+                    <li>API Access: Use GitHub's API to check for updates programmatically.</li>
+                </ul>
+                <p>You can find the database repository <a href="https://github.com/FlorealRISSO/France-Terme-SQL-DB"
+                        target="_blank">here</a>.</p>
+
+                <h3 id="database">Step 3: Client-Side Database Management</h3>
+                <p>
+                    The final piece of the puzzle is managing the database entirely on the client-side:
+                </p>
+                <ol>
+                    <li>On first load, the web application downloads the SQLite database file from GitHub.</li>
+                    <li>The app stores this file in the browser's localStorage for offline use and faster subsequent
+                        loads.
+                    </li>
+                    <li>On each load, the app checks the GitHub API for the current SHA of the database file. If it's
+                        different from the stored version, the app downloads and stores the updated database.</li>
+                </ol>
+                <div class="mermaid">
+                    graph TD
+                    A[App Starts] --> B{Is DB in localStorage?}
+                    B -->|Yes| C{Is DB up to date?}
+                    B -->|No| D[Download DB from GitHub]
+                    C -->|Yes| E[Use local DB]
+                    C -->|No| D
+                    D --> F[Store DB in localStorage]
+                    F --> E
+                </div>
+            </section>
+
+            <section>
+                <h2 id="benefits">The Benefits of Going Backend-less</h2>
+                <p>
+                    This approach offers several significant advantages:
+                </p>
+                <ul>
+                    <li>No Server Costs: By eliminating the need for a backend server, we avoid ongoing hosting
+                        expenses.
+                    </li>
+                    <li>Enhanced Security: With no server to attack, we reduce our security attack surface.</li>
+                    <li>Offline Functionality: Once the database is downloaded, the app works entirely offline.</li>
+                    <li>Simplified Architecture: Without a backend, our architecture is easier to maintain.</li>
+                    <li>Scalability: This solution scales effortlessly, as each user essentially hosts their own
+                        "backend"
+                        in their browser.</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2 id="conclusion">Conclusion</h2>
+                <p>
+                    By leveraging modern web technologies, we've created a truly serverless solution for France Termes.
+                    This
+                    approach demonstrates that it's possible to
+                    build complex, data-driven applications without the need for a traditional backend.
+                </p>
+                <p>
+                    While this solution may not suit all use cases, especially those requiring real-time data or
+                    handling
+                    sensitive information, it opens up new possibilities
+                    for a wide range of applications.
+                </p>
+                <p>
+                    You can see the final result of this backend-less approach in action at the
+                    <a href="https://francetermes.github.io/" target="_blank">France Termes webapp</a>.
+                </p>
+                <p>
+                    For those interested in the technical details, you can explore the source code for the
+                    <a href="https://github.com/FlorealRISSO/FranceTermes" target="_blank">original version</a> and the
+                    <a href="https://github.com/FlorealRISSO/France-Termes-v2" target="_blank">current version</a> on
+                    GitHub.
+                </p>
+            </section>
+        </article>
+    </div>
+
+</body>
+
+</html>
