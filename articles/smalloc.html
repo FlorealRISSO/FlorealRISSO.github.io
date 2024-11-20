@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Backend-less: The True Serverless</title>
+        <link rel="stylesheet" href="styles.css" />
+        <style>
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 5px;
+            margin-bottom: 20px;
+        }
+        .status-item {
+            padding: 10px;
+            text-align: center;
+            border: 1px solid #ddd;
+            font-size: 12px;
+            transition: transform 0.2s;
+        }
+        .status-item:hover {
+            transform: scale(1.05);
+            z-index: 10;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+        }
+        .navigation {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .navigation button {
+            padding: 10px 20px;
+            background-color: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .navigation button:disabled {
+            background-color: #b0b0b0;
+            cursor: not-allowed;
+        }
+        .navigation button:hover:not(:disabled) {
+            background-color: #357abd;
+        }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>
+                Building a Minimalist Memory Allocator in C: A Hands-On
+                Experiment
+            </h1>
+        </header>
+
+        <nav>
+            <a href="../index.html">Articles</a>
+            <a href="../projects/projects.html">Projects</a>
+            <a href="../about/about.html">About Me</a>
+        </nav>
+        <div class="container">
+            <article>
+                <div class="author-info">
+                    <p>By Floréal Risso</p>
+                    <p>
+                        Github:
+                        <a href="https://github.com/florealrisso"
+                            >FlorealRISSO</a
+                        >
+                    </p>
+                    <p>
+                        Email:
+                        <a href="mailto:floreal.risso@proton.me"
+                            >floreal.risso@proton.me</a
+                        >
+                    </p>
+                    <p>
+                        Sources:
+                        <a href="https://github.com/FlorealRISSO/smalloc"
+                            >Github smalloc</a
+                        >
+                    </p>
+                    <p>Published: November 20, 2024</p>
+                </div>
+                <section>
+                    <h2 id="introduction">Introduction</h2>
+                    <p>
+                        When I first encountered <b>malloc</b> and
+                        <b>free</b> in C, they seemed like magic. These
+                        functions allowed dynamic memory allocation, but how did
+                        they really work? Where was the metadata stored, and
+                        what kind of algorithms ensured efficient allocation and
+                        deallocation? The more I learned, the more I realized
+                        these concepts relied on complex structures and
+                        algorithms like linked lists, free lists, and memory
+                        pools. This curiosity sparked a question: Could I build
+                        a simpler memory management system? One that didn’t rely
+                        on advanced algorithms but still worked with different
+                        types of memory, such as heap or stack. The constraints?
+                        I have exactly <b>MEMORY_SZ</b> bytes available, and I
+                        need to handle <b>alloc(size)</b> and
+                        <b>dealloc(ptr)</b> calls while keeping all metadata
+                        within those <b>MEMORY_SZ</b> bytes. Here’s the story of
+                        how I designed and implemented a minimalist memory
+                        allocator.
+                    </p>
+                </section>
+                <section id="challenge">
+                    <h2>Understanding the Challenge</h2>
+                    <p>
+                        Memory allocators often store metadata outside the
+                        allocated space, but in this exercise, the metadata must
+                        fit inside the <b>MEMORY_SZ</b> bytes.
+                    </p>
+                    <p>
+                        Additionally:
+                        <ul>
+                           <li>Memory is divided into chunks, with each chunk being the smallest allocatable unit (uint64_t in our case).</li>
+                           <li>Metadata must track the status of every chunk, distinguishing between <b>FREE</b> and <b>USED</b> states.</li>
+                           <li>Metadata overhead should be minimal, leaving most of the space for user data.</li>
+                        </ul>
+                    </p>
+                    <p>
+                        To meet these constraints, I adopted a bitmap-like
+                        structure to track chunk statuses. The allocator maps
+                        each chunk to a corresponding status, where:
+                        <ul>
+                            <li><b>FREE</b> indicates an available chunk.</li>
+                            <li><b>USED1</b>, <b>USED2</b>, and <b>USED3</b> identify different allocations, ensuring unique identification for deallocation. (This is inspired by the Four Color Theorem, which states that four colors are sufficient to distinguish adjacent regions on a map.)</li>
+                        </ul>
+                    </p>
+                </section>
+                <section id="design">
+                    <h2>Designing the Data Structure</h2>
+                    <p>
+                        The core of the allocator is the Memory structure:
+                    </p>
+                    <pre><code>
+typedef struct Memory {
+    uint8_t status[NB_STATUS]; // Metadata: chunk statuses
+    #if PADDING_SZ > 0
+        uint8_t padding[PADDING_SZ]; // Ensure alignment
+    #endif
+    uint64_t data[NB_CHUNK]; // User data
+} Memory;
+                    </code></pre>
+                    <p>
+                        Key points:
+                        <ul>
+                            <li>
+                                Each chunk's status is stored using 2 bits (<b>FREE</b>, <b>USED1</b>, <b>USED2</b>, <b>USED3</b>), enabling efficient metadata management.
+                            </li>
+                            <li>
+                                <b>status</b> is compact, with 1 byte representing the statuses of 4 chunks.
+                            </li>
+                            <li>
+                                Padding ensures alignment and that the structure size matches <b>MEMORY_SZ</b>.
+                            </li>
+                        </ul>
+                        The sizes are calculated with these macros:
+                    </p>
+                    <pre><code>
+#define ALIGN_SZ 8
+#define STATUS_SZ 1
+#define CHUNK_SZ 8
+#define NB_STATUS_OCTET 4
+
+#define COUPLE_STATUS_CHUNK (STATUS_SZ + (CHUNK_SZ * NB_STATUS_OCTET))
+#define PADDING_MAX (MEMORY_SZ % COUPLE_STATUS_CHUNK)
+#define USEFUL_SZ (MEMORY_SZ - PADDING_MAX)
+
+#define NB_STATUS (USEFUL_SZ / COUPLE_STATUS_CHUNK)
+#define NB_CHUNK (NB_STATUS * NB_STATUS_OCTET)
+#define PADDING_SZ (PADDING_MAX - (NB_STATUS % ALIGN_SZ))
+                    </code></pre>
+                    <p>
+                        These calculations ensure that metadata and user data fit perfectly within the memory space.
+                    </p>
+                </section>
+                <section id="implementation">
+                    <h2>Implementation</h2>
+                    <h3>Allocation</h3>
+                    <p>
+                        The <b>alloc</b> function searches for consecutive free chunks in <b>status</b> that match the requested size. Once found, the corresponding <b>status</b> entries are updated, and a pointer to the allocated space in <b>data</b> is returned. If no such space is available, <b>NULL</b> is returned.
+                    </p>
+                    <p>
+                        To manipulate the `status` array, helper functions are used:
+
+                        <ul>
+                            <li><b>st_access(uint8_t status, int i)</b> to access 2-bit values.</li>
+                            <li><b>set(uint8_t value, uint8_t status, int i)</b> to update 2-bit values.</li>
+                            <li><b>status_memset</b> to initialize ranges of <b>status</b>.</li>
+                        </ul>
+
+                        This gives <b>alloc</b> a complexity of O(n), where n is the number of chunks. Optimization to O(log n) would require more advanced data structures, such as segment trees.
+                    </p>
+                    <h3>Deallocation</h3>
+                    <p>
+                        Deallocating a pointer involves:
+
+                        <ul>
+                            <li>Mapping the pointer back to its corresponding chunk in `status`.</li>
+                            <li>Identifying the `USED` type (e.g., `USED1`).</li>
+                            <li>Iterating through `status` and replacing all matching `USED` statuses with `FREE`.</li>
+                        </ul>
+
+                        This operation is straightforward and ensures that the memory is ready for future allocations.
+                    </p>
+                </section>
+                <section id="testing">
+                    <h2>
+                        Testing the Allocator
+                    </h2>
+                    <p>
+                        To validate the implementation, I wrote <a href="https://github.com/FlorealRISSO/smalloc/blob/main/test.c">tests</a> like <b>test_alloc_alloc_alloc_free_middle</b>.
+                        <br>
+                        Here’s the sequence:
+                        <ul>
+                            <li>Allocate three blocks of memory.</li>
+                            <li>Free the middle block.</li>
+                            <li>Allocate a new block in the freed space.</li>
+                        </ul>
+                        Using a dump function, we visualize the `status` array at each step. For example:
+                        <div class="navigation">
+                        <button id="prevPageBtn" disabled>Previous Step</button>
+                        <span id="pageCounter">Page: 0 / 0</span>
+                        <button id="nextPageBtn" disabled>Next Step</button>
+                        </div>
+                        <div id="statusGrid" class="status-grid"></div>
+                        These results confirm the allocator works as expected.
+                    </p>
+                </section>
+                <section id="fun-facts">
+                    <h2>Fun facts</h2>
+                    <p>
+                        <ul>
+                            <li>Partial Deallocation: The allocator supports partial freeing. For example, if an allocated array is no longer fully needed, the unused portion can be freed explicitly.</li>
+                            <li>OS Independence: The <b>Memory</b> structure can reside on the stack, making this allocator usable in environments without an operating system.</li>
+                        </ul>
+                    </p>
+                </section>
+                <section id="conclusion">
+                    <h2>Conclusion</h2>
+                    <p>
+                        Designing this allocator was a rewarding journey into the fundamentals of memory management. It’s far from a production-ready solution, but as a proof of concept, it demonstrates how simple structures and algorithms can achieve efficient memory management.
+                        This experiment underscores the value of research and development in computer science. Even small projects like this can deepen your understanding of how systems work under the hood—and they’re just plain fun to build.
+                    </p>
+                </section>
+            </article>
+        </div>
+        <script>
+        const statusGrid = document.getElementById("statusGrid");
+        const nextPageBtn = document.getElementById("nextPageBtn");
+        const prevPageBtn = document.getElementById("prevPageBtn");
+        const pageCounter = document.getElementById("pageCounter");
+
+        const STATUS_SZ = 2;
+        const colorConfig = {
+            free: "#3498db",
+            used1: "#e74c3c",
+            used2: "#2ecc71",
+            used3: "#f39c12",
+        };
+        let currentPage = 0;
+        const fileData = [
+            1,0,
+            41,0,
+            105,21,
+            65,21,
+            105,21,
+        ];
+        const totalPages =  Math.ceil(fileData.length / STATUS_SZ);
+
+        function getStatusColor(status) {
+            switch (status) {
+                case 0:
+                    return colorConfig.free; // 00
+                case 1:
+                    return colorConfig.used1; // 01
+                case 2:
+                    return colorConfig.used2; // 10
+                case 3:
+                    return colorConfig.used3; // 11
+                default:
+                    return colorConfig.free;
+            }
+        }
+
+        function updatePageNavigation() {
+            prevPageBtn.disabled = currentPage === 0;
+            nextPageBtn.disabled = currentPage >= totalPages - 1;
+            pageCounter.textContent = `Step: ${currentPage + 1} / ${totalPages}`;
+        }
+
+        function renderStatusGrid(startIndex) {
+            statusGrid.innerHTML = "";
+            for (let i = 0; i < STATUS_SZ * 4; i++) {
+                const byteIndex = Math.floor(i / 4) + startIndex;
+                const bitPosition = i % 4;
+
+                // Ensure we don't go out of bounds
+                let status = 0;
+                if (byteIndex < fileData.length) {
+                    status =
+                        (fileData[byteIndex] >> (bitPosition * 2)) & 0b11;
+                }
+
+                const statusItem = document.createElement("div");
+                statusItem.classList.add("status-item");
+                statusItem.textContent = status;
+                statusItem.style.backgroundColor = getStatusColor(status);
+                statusGrid.appendChild(statusItem);
+            }
+
+            // Update page navigation
+            updatePageNavigation();
+        }
+
+        nextPageBtn.addEventListener("click", () => {
+            if (currentPage < totalPages - 1) {
+                currentPage++;
+                renderStatusGrid(currentPage * STATUS_SZ);
+            }
+        });
+
+        prevPageBtn.addEventListener("click", () => {
+            if (currentPage > 0) {
+                currentPage--;
+                renderStatusGrid(currentPage * STATUS_SZ);
+            }
+        });
+
+        renderStatusGrid(currentPage);
+        </script>
+    </body>
+</html>
