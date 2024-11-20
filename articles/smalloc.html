@@ -188,7 +188,7 @@ typedef struct Memory {
                         The <b>alloc</b> function searches for consecutive free chunks in <b>status</b> that match the requested size. Once found, the corresponding <b>status</b> entries are updated, and a pointer to the allocated space in <b>data</b> is returned. If no such space is available, <b>NULL</b> is returned.
                     </p>
                     <p>
-                        To manipulate the `status` array, helper functions are used:
+                        To manipulate the <b>status</b> array, helper functions are used:
 
                         <ul>
                             <li><b>st_access(uint8_t status, int i)</b> to access 2-bit values.</li>
@@ -203,9 +203,9 @@ typedef struct Memory {
                         Deallocating a pointer involves:
 
                         <ul>
-                            <li>Mapping the pointer back to its corresponding chunk in `status`.</li>
-                            <li>Identifying the `USED` type (e.g., `USED1`).</li>
-                            <li>Iterating through `status` and replacing all matching `USED` statuses with `FREE`.</li>
+                            <li>Mapping the pointer back to its corresponding chunk in <b>status</b>.</li>
+                            <li>Identifying the <b>USED</b> type (e.g., <b>USED1</b>).</li>
+                            <li>Iterating through <b>status</b> and replacing all matching <b>USED</b> statuses with <b>FREE</b>.</li>
                         </ul>
 
                         This operation is straightforward and ensures that the memory is ready for future allocations.
@@ -224,7 +224,7 @@ typedef struct Memory {
                             <li>Free the middle block.</li>
                             <li>Allocate a new block in the freed space.</li>
                         </ul>
-                        Using a dump function, we visualize the `status` array at each step. For example:
+                        Using a dump function, we visualize the <b>status</b> array at each step. For example:
                         <div class="navigation">
                         <button id="prevPageBtn" disabled>Previous Step</button>
                         <span id="pageCounter">Page: 0 / 0</span>
